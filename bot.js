@@ -13,7 +13,6 @@ client.once(Events.ClientReady, async readyClient => {
     console.log(`Connected as ${readyClient.user.tag}!`);
 });
 
-
 client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
     if (reaction.emoji.name !== '📝') return;
@@ -22,15 +21,40 @@ client.on('messageReactionAdd', async (reaction, user) => {
         if (reaction.partial) await reaction.fetch();
         if (reaction.message.partial) await reaction.message.fetch();
         const quote = reaction.message;
-        const canvas = createCanvas(800, 400); // size
+        const canvas = createCanvas(800, 400);
         const img = canvas.getContext('2d');
-        img.fillStyle = '#d9d9d9'; // background
-        img.fillRect(0, 0, canvas.width, canvas.height); // size
-        img.fillStyle = '#000000'; // text colour
-        img.font = '25px sans-serif'; // text font
+        img.fillStyle = '#d9d9d9';
+        img.fillRect(0, 0, canvas.width, canvas.height);
+        img.fillStyle = '#000000';
+        let fontSize = 25;
+        img.font = `${fontSize}px sans-serif`;
         img.textAlign = 'center';
-        img.fillText(quote.content, canvas.width / 2, 40); // text location
-        img.textAlign = 'left';
+        let infoSize = 20;
+        const maxWidth = canvas.width - 40;
+        const words = quote.content.split(' ');
+        const lines = [];
+        let line = '';
+
+        for (const word of words) {
+            const testLine = line + word + ' ';
+            if (img.measureText(testLine).width > maxWidth) {
+                lines.push(line.trim());
+                line = word + ' ';
+            } else {
+                line = testLine;
+            }
+        }
+        lines.push(line.trim());
+
+        const lineHeight = fontSize * 1.2;
+        const textHeight = lines.length * lineHeight;
+        let y = (canvas.height - textHeight) / 2 + lineHeight / 2;
+        for (const l of lines) {
+            img.fillText(l, canvas.width / 2, y);
+            y += lineHeight;
+        }
+
+        const displayName = quote.member?.displayName ?? quote.author.username;
 
         let date = quote.createdAt;
         let monthnum = date.getMonth();
@@ -64,8 +88,15 @@ client.on('messageReactionAdd', async (reaction, user) => {
             month = 'December';
         }
 
+        let bottomText = `${displayName} (${quote.author.username}) - ${month} ${day}, ${year}`;
 
-        img.fillText(`${quote.member.displayName} - ${month} ${day}, ${year}`, 20, 380);
+        do {
+            img.font = `${infoSize}px sans-serif`;
+            infoSize--;
+        } while (img.measureText(bottomText).width > canvas.width - 40 && infoSize > 10);
+        img.textAlign = 'left';
+        img.fillText(bottomText, 20, 380);
+
         const buffer = canvas.toBuffer('image/png');
         const attachment = new AttachmentBuilder(buffer, { name: `quote-${Date.now()}-${quote.guildId}.png` });
         await quote.channel.send({ files: [attachment] });
