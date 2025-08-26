@@ -7,7 +7,8 @@ const client = new Client({
     ],
     partials: [
         Partials.Message, Partials.Channel, Partials.Reaction
-    ], });
+    ],
+});
 
 client.once(Events.ClientReady, async readyClient => {
     console.log(`Connected as ${readyClient.user.tag}!`);
@@ -17,16 +18,19 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (user.bot) return;
     if (reaction.emoji.name !== '📝') return;
 
+    const backgroundnum = Math.floor(Math.random() * 3 + 1);
+    const backgroundImage = await loadImage(__dirname + `/backgrounds/${backgroundnum}.jpg`);
+
     try {
+        console.log(`quoting!`);
         if (reaction.partial) await reaction.fetch();
         if (reaction.message.partial) await reaction.message.fetch();
         const quote = reaction.message;
-        const canvas = createCanvas(800, 400);
+        const canvas = createCanvas(800, 450);
         const img = canvas.getContext('2d');
-        img.fillStyle = '#d9d9d9';
-        img.fillRect(0, 0, canvas.width, canvas.height);
-        img.fillStyle = '#000000';
-        let fontSize = 25;
+        img.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+        img.fillStyle = '#000000'; // text colour
+        let fontSize = 25; // main quote font size
         img.font = `${fontSize}px sans-serif`;
         img.textAlign = 'center';
         let infoSize = 20;
@@ -60,7 +64,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         let monthnum = date.getMonth();
         let year = date.getFullYear();
         let day = date.getDate();
-        let month
+        let month;
 
         if (monthnum === 0) {
             month = 'January';
@@ -95,11 +99,12 @@ client.on('messageReactionAdd', async (reaction, user) => {
             infoSize--;
         } while (img.measureText(bottomText).width > canvas.width - 40 && infoSize > 10);
         img.textAlign = 'left';
-        img.fillText(bottomText, 20, 380);
+        img.fillText(bottomText, 20, 430);
 
         const buffer = canvas.toBuffer('image/png');
         const attachment = new AttachmentBuilder(buffer, { name: `quote-${Date.now()}-${quote.guildId}.png` });
         await quote.channel.send({ files: [attachment] });
+        console.log(`quoted!`);
     } catch (error) {
         console.error(error);
 }})
