@@ -59,6 +59,7 @@ client.on(Events.InteractionCreate, async interaction => {
     let dateType;
 
     if (commandName === 'quote') {
+        await interaction.reply({ content: "Generating...", ephemeral: true });
         const text = interaction.options.getString('text');
         const user = interaction.options.getUser('user');
         let date = interaction.options.getString('date');
@@ -84,7 +85,7 @@ client.on(Events.InteractionCreate, async interaction => {
             dateType
         });
 
-        await interaction.reply({
+        await interaction.editReply({
             files: [attachment],
             ephemeral: false
         });
@@ -189,7 +190,7 @@ async function generate({ text, authorName, displayName, date, channel, messageI
         if (dateType === 'full') {
             quoteDate = `${month} ${day}, ${year}`;
         } else if (dateType === 'month') {
-            quoteDate = `${month}, ${year}`;
+            quoteDate = `${month} ${year}`;
         } else if (dateType === 'year') {
             quoteDate = `${year}`;
         }
