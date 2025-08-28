@@ -1,4 +1,4 @@
-const { Client, Events, GatewayIntentBits, AttachmentBuilder, Partials } = require('discord.js');
+const { Client, Events, GatewayIntentBits, AttachmentBuilder, Partials, SlashCommandBuilder } = require('discord.js');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const { token } = require('./config.json');
 const client = new Client({
@@ -10,24 +10,121 @@ const client = new Client({
     ],
 });
 
+
 client.once(Events.ClientReady, async readyClient => {
+    await registerCommand();
     console.log(`Connected as ${readyClient.user.tag}!`);
 });
 
-client.on('messageReactionAdd', async (reaction, user) => {
-    if (user.bot) return;
-    if (reaction.emoji.name !== '📝') return;
+async function registerCommand() {
+const commands = [
+    new SlashCommandBuilder()
+        .setName('quote')
+        .setDescription('Generates a quote graphic')
+        .addStringOption(option =>
+            option.setName('text')
+                .setDescription('What?')
+                .setRequired(true)
+        )
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('Who?')
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option.setName('date')
+                .setDescription('When?')
+                .setRequired(true)
+                .addChoices(
+                    { name: 'Today', value: 'today' },
+                    { name: 'This month', value: 'thisMonth' },
+                    { name: 'This year', value: 'thisYear' },
+                )
+        )
+].map(cmd => cmd.toJSON());
 
+try {
+    await client.application.commands.set(commands);
+    console.log('Commands registered');
+} catch (error) {
+    console.error('Error registering commands:', error);
+}
+}
+
+client.on(Events.InteractionCreate, async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const { commandName } = interaction;
+
+    let dateType;
+
+    if (commandName === 'quote') {
+        const text = interaction.options.getString('text');
+        const user = interaction.options.getUser('user');
+        let date = interaction.options.getString('date');
+
+        if (date === 'today') {
+            dateType = 'full';
+            date = new Date();
+        } else if (date === 'thisMonth') {
+            dateType = 'month';
+            date = new Date();
+        } else if (date === 'thisYear') {
+            dateType = 'year';
+            date = new Date();
+        }
+
+        const attachment = await generate({
+            text,
+            authorName: user.username, 
+            displayName: interaction.guild.members.cache.get(user.id)?.displayName || user.username,
+            date,
+            messageId: Date.now(),
+            channel: interaction.channel,
+            dateType
+        });
+
+        await interaction.reply({
+            files: [attachment],
+            ephemeral: false
+        });
+    }
+});
+
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+    try {
+        if (reaction.emoji.name !== '📝') return;
+        if (reaction.partial) await reaction.fetch();
+        if (reaction.message.partial) await reaction.message.fetch();
+
+        const message = reaction.message;
+        if (message.author.bot) return;
+        let dateType = 'full';
+        await generate({
+            text: message.content,
+            authorName: message.author.username,
+            displayName: message.member?.displayName || message.author.username,
+            date: message.createdAt,
+            channel: message.channel,
+            messageId: message.id,
+            dateType
+        });
+    } catch (err) {
+        console.error('Reaction error:', err);
+    }
+});
+
+
+async function generate({ text, authorName, displayName, date, channel, messageId, dateType }) {
     const backgroundnum = Math.floor(Math.random() * 3 + 1);
     const backgroundImage = await loadImage(__dirname + `/backgrounds/${backgroundnum}.jpg`);
 
     try {
         console.log(`quoting!`);
-        if (reaction.partial) await reaction.fetch();
-        if (reaction.message.partial) await reaction.message.fetch();
-        const quote = reaction.message;
-        const canvas = createCanvas(800, 450);
+        console.time(`quoteImage-${messageId}`);
+        const canvas = createCanvas(800, 450); // size
         const img = canvas.getContext('2d');
+        let quoteDate;
         img.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
         img.fillStyle = '#000000'; // text colour
         let fontSize = 25; // main quote font size
@@ -35,7 +132,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         img.textAlign = 'center';
         let infoSize = 20;
         const maxWidth = canvas.width - 40;
-        const words = quote.content.split(' ');
+        const words = text.split(' ');
         const lines = [];
         let line = '';
 
@@ -58,12 +155,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
             y += lineHeight;
         }
 
-        const displayName = quote.member?.displayName ?? quote.author.username;
-
-        let date = quote.createdAt;
-        let monthnum = date.getMonth();
-        let year = date.getFullYear();
-        let day = date.getDate();
+        let d = new Date(date);
+        let monthnum = d.getMonth();
+        let year = d.getFullYear();
+        let day = d.getDate();
         let month;
 
         if (monthnum === 0) {
@@ -91,8 +186,15 @@ client.on('messageReactionAdd', async (reaction, user) => {
         } else if (monthnum === 11) {
             month = 'December';
         }
+        if (dateType === 'full') {
+            quoteDate = `${month} ${day}, ${year}`;
+        } else if (dateType === 'month') {
+            quoteDate = `${month}, ${year}`;
+        } else if (dateType === 'year') {
+            quoteDate = `${year}`;
+        }
 
-        let bottomText = `${displayName} (${quote.author.username}) - ${month} ${day}, ${year}`;
+        let bottomText = `${displayName} (${authorName}) - ${quoteDate}`;
 
         do {
             img.font = `${infoSize}px sans-serif`;
@@ -102,11 +204,12 @@ client.on('messageReactionAdd', async (reaction, user) => {
         img.fillText(bottomText, 20, 430);
 
         const buffer = canvas.toBuffer('image/png');
-        const attachment = new AttachmentBuilder(buffer, { name: `quote-${Date.now()}-${quote.guildId}.png` });
-        await quote.channel.send({ files: [attachment] });
+        const attachment = new AttachmentBuilder(buffer, { name: `quote-${Date.now()}-${messageId}.png` });
+        await channel.send({ files: [attachment] });
+        console.timeEnd(`quoteImage-${messageId}`);
         console.log(`quoted!`);
     } catch (error) {
         console.error(error);
-}})
+}}
 
 client.login(token);
